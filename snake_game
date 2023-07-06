@@ -1,0 +1,190 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <termios.h>
+#include <fcntl.h>
+
+#define WIDTH 20
+#define HEIGHT 20
+
+int gameOver;
+int score;
+int snakeX, snakeY;
+int fruitX, fruitY;
+int tailX[100], tailY[100];
+int tailLength;
+enum Direction { STOP = 0, LEFT, RIGHT, UP, DOWN };
+enum Direction dir;
+
+struct termios originalTermios;
+
+void ResetTerminalMode() {
+    tcsetattr(STDIN_FILENO, TCSANOW, &originalTermios);
+}
+
+void SetTerminalMode() {
+    struct termios newTermios;
+
+    tcgetattr(STDIN_FILENO, &originalTermios);
+    atexit(ResetTerminalMode);
+
+    newTermios = originalTermios;
+    newTermios.c_lflag &= ~(ICANON | ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &newTermios);
+}
+
+int _kbhit() {
+    struct timeval tv = { 0L, 0L };
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(STDIN_FILENO, &fds);
+    return select(1, &fds, NULL, NULL, &tv);
+}
+
+int _getch() {
+    char c;
+    if (read(0, &c, sizeof(c)) < 0)
+        return EOF;
+    return c;
+}
+
+void Setup() {
+    gameOver = 0;
+    score = 0;
+    snakeX = WIDTH / 2;
+    snakeY = HEIGHT / 2;
+    fruitX = rand() % WIDTH;
+    fruitY = rand() % HEIGHT;
+    tailLength = 0;
+    dir = STOP;
+}
+
+void Draw() {
+    int i, j;
+    system("clear");
+
+    for (i = 0; i < WIDTH + 2; i++)
+        printf("#");
+    printf("\n");
+
+    for (i = 0; i < HEIGHT; i++) {
+        for (j = 0; j < WIDTH; j++) {
+            if (j == 0 || j == WIDTH - 1)
+                printf("#");
+            if (i == snakeY && j == snakeX)
+                printf("O");
+            else if (i == fruitY && j == fruitX)
+                printf("F");
+            else {
+                int isTail = 0;
+                for (int k = 0; k < tailLength; k++) {
+                    if (tailX[k] == j && tailY[k] == i) {
+                        printf("o");
+                        isTail = 1;
+                        break;
+                    }
+                }
+                if (!isTail)
+                    printf(" ");
+            }
+        }
+        printf("\n");
+    }
+
+    for (i = 0; i < WIDTH + 2; i++)
+        printf("#");
+    printf("\n");
+
+    printf("Score: %d\n", score);
+}
+
+void Input() {
+    if (_kbhit()) {
+        switch (_getch()) {
+            case 'a':
+                if (dir != RIGHT)
+                    dir = LEFT;
+                break;
+            case 'd':
+                if (dir != LEFT)
+                    dir = RIGHT;
+                break;
+            case 'w':
+                if (dir != DOWN)
+                    dir = UP;
+                break;
+            case 's':
+                if (dir != UP)
+                    dir = DOWN;
+                break;
+            case 'x':
+                gameOver = 1;
+                break;
+        }
+    }
+}
+
+void Logic() {
+    int prevX, prevY, prev2X, prev2Y, i;
+
+    prevX = tailX[0];
+    prevY = tailY[0];
+    tailX[0] = snakeX;
+    tailY[0] = snakeY;
+
+    for (i = 1; i < tailLength; i++) {
+        prev2X = tailX[i];
+        prev2Y = tailY[i];
+        tailX[i] = prevX;
+        tailY[i] = prevY;
+        prevX = prev2X;
+        prevY = prev2Y;
+    }
+
+    switch (dir) {
+        case LEFT:
+            snakeX--;
+            break;
+        case RIGHT:
+            snakeX++;
+            break;
+        case UP:
+            snakeY--;
+            break;
+        case DOWN:
+            snakeY++;
+            break;
+    }
+
+    if (snakeX < 0 || snakeX >= WIDTH || snakeY < 0 || snakeY >= HEIGHT)
+        gameOver = 1;
+
+    for (i = 0; i < tailLength; i++) {
+        if (tailX[i] == snakeX && tailY[i] == snakeY)
+            gameOver = 1;
+    }
+
+    if (snakeX == fruitX && snakeY == fruitY) {
+        score++;
+        fruitX = rand() % WIDTH;
+        fruitY = rand() % HEIGHT;
+        tailLength++;
+    }
+}
+
+int main() {
+    SetTerminalMode();
+    Setup();
+
+    while (!gameOver) {
+        Draw();
+        Input();
+        Logic();
+        usleep(100000); // ゲームのスピードを調整するためのスリープ
+    }
+
+    printf("Game Over!\n");
+    printf("Final Score: %d\n", score);
+
+    return 0;
+}
